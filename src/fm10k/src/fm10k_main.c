@@ -943,7 +943,7 @@ static void fm10k_tx_csum(struct fm10k_ring *tx_ring,
 		if (skb->encapsulation)
 			break;
 #endif
-		/* fall through */
+		fallthrough;
 	default:
 #ifdef HAVE_ENCAP_TSO_OFFLOAD
 		if (unlikely(net_ratelimit())) {
@@ -1731,7 +1731,7 @@ static int fm10k_alloc_q_vector(struct fm10k_intfc *interface,
 
 	/* initialize NAPI */
 	netif_napi_add(interface->netdev, &q_vector->napi,
-		       fm10k_poll, NAPI_POLL_WEIGHT);
+		       fm10k_poll);
 
 	/* tie q_vector and interface together */
 	interface->q_vector[v_idx] = q_vector;

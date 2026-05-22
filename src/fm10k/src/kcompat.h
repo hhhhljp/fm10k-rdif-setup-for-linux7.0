@@ -5789,7 +5789,12 @@ static inline int _kc_macvlan_release_l2fw_offload(struct net_device *dev)
 #ifndef xdp_umem_get_data
 static inline char *__kc_xdp_umem_get_data(struct xdp_umem *umem, u64 addr)
 {
-	return umem->pages[addr >> PAGE_SHIFT].addr + (addr & (PAGE_SIZE - 1));
+	unsigned long pfn;
+
+	pfn = page_to_pfn(umem->pgs[addr >> PAGE_SHIFT]);
+	if (!pfn)
+		return NULL;
+	return (char *)(pfn_to_kaddr(pfn)) + (addr & (PAGE_SIZE - 1));
 }
 
 #define xdp_umem_get_data __kc_xdp_umem_get_data
@@ -5797,7 +5802,10 @@ static inline char *__kc_xdp_umem_get_data(struct xdp_umem *umem, u64 addr)
 #ifndef xdp_umem_get_dma
 static inline dma_addr_t __kc_xdp_umem_get_dma(struct xdp_umem *umem, u64 addr)
 {
-	return umem->pages[addr >> PAGE_SHIFT].dma + (addr & (PAGE_SIZE - 1));
+	struct page *page;
+
+	page = umem->pgs[addr >> PAGE_SHIFT];
+	return (dma_addr_t)page_to_phys(page) + (addr & (PAGE_SIZE - 1));
 }
 
 #define xdp_umem_get_dma __kc_xdp_umem_get_dma

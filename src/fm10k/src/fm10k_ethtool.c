@@ -3,6 +3,10 @@
 
 #include <linux/vmalloc.h>
 
+#ifndef FIELD_SIZEOF
+#define FIELD_SIZEOF(t, f) (sizeof(((t *)0)->f))
+#endif
+
 #include "fm10k.h"
 
 struct fm10k_stats {
@@ -505,7 +509,9 @@ static void fm10k_set_msglevel(struct net_device *netdev, u32 data)
 }
 
 static void fm10k_get_ringparam(struct net_device *netdev,
-				struct ethtool_ringparam *ring)
+				struct ethtool_ringparam *ring,
+				struct kernel_ethtool_ringparam *kernel_ring,
+				struct netlink_ext_ack *extack)
 {
 	struct fm10k_intfc *interface = netdev_priv(netdev);
 
@@ -520,7 +526,9 @@ static void fm10k_get_ringparam(struct net_device *netdev,
 }
 
 static int fm10k_set_ringparam(struct net_device *netdev,
-			       struct ethtool_ringparam *ring)
+			       struct ethtool_ringparam *ring,
+			       struct kernel_ethtool_ringparam *kernel_ring,
+			       struct netlink_ext_ack *extack)
 {
 	struct fm10k_intfc *interface = netdev_priv(netdev);
 	struct fm10k_ring *temp_ring;
@@ -635,7 +643,9 @@ clear_reset:
 }
 
 static int fm10k_get_coalesce(struct net_device *dev,
-			      struct ethtool_coalesce *ec)
+			      struct ethtool_coalesce *ec,
+			      struct kernel_ethtool_coalesce *kernel_coal,
+			      struct netlink_ext_ack *extack)
 {
 	struct fm10k_intfc *interface = netdev_priv(dev);
 
@@ -649,7 +659,9 @@ static int fm10k_get_coalesce(struct net_device *dev,
 }
 
 static int fm10k_set_coalesce(struct net_device *dev,
-			      struct ethtool_coalesce *ec)
+			      struct ethtool_coalesce *ec,
+			      struct kernel_ethtool_coalesce *kernel_coal,
+			      struct netlink_ext_ack *extack)
 {
 	struct fm10k_intfc *interface = netdev_priv(dev);
 	u16 tx_itr, rx_itr;
@@ -696,12 +708,12 @@ static int fm10k_get_rss_hash_opts(struct fm10k_intfc *interface,
 	case TCP_V4_FLOW:
 	case TCP_V6_FLOW:
 		cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		/* fall through */
+		fallthrough;
 	case UDP_V4_FLOW:
 		if (test_bit(FM10K_FLAG_RSS_FIELD_IPV4_UDP,
 			     interface->flags))
 			cmd->data |= RXH_L4_B_0_1 | RXH_L4_B_2_3;
-		/* fall through */
+		fallthrough;
 	case SCTP_V4_FLOW:
 	case SCTP_V6_FLOW:
 	case AH_ESP_V4_FLOW:
@@ -727,13 +739,8 @@ static int fm10k_get_rss_hash_opts(struct fm10k_intfc *interface,
 	return 0;
 }
 
-#ifdef HAVE_ETHTOOL_GET_RXNFC_VOID_RULE_LOCS
-static int fm10k_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
-			   void __always_unused *rule_locs)
-#else
 static int fm10k_get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
 			   u32 __always_unused *rule_locs)
-#endif
 {
 	struct fm10k_intfc *interface = netdev_priv(dev);
 	int ret = -EOPNOTSUPP;
@@ -1088,19 +1095,18 @@ static u32 fm10k_get_rssrk_size(struct net_device __always_unused *netdev)
 }
 
 #ifdef HAVE_RXFH_HASHFUNC
-static int fm10k_get_rssh(struct net_device *netdev, u32 *indir, u8 *key,
-			  u8 *hfunc)
-#else
-static int fm10k_get_rssh(struct net_device *netdev, u32 *indir, u8 *key)
-#endif
+static int fm10k_get_rssh(struct net_device *netdev,
+			 struct ethtool_rxfh_param *rxfh)
 {
 	struct fm10k_intfc *interface = netdev_priv(netdev);
 	int i, err;
+	u32 *indir;
+	u8 *key;
 
-#ifdef HAVE_RXFH_HASHFUNC
-	if (hfunc)
-		*hfunc = ETH_RSS_HASH_TOP;
-#endif
+	rxfh->hfunc = ETH_RSS_HASH_TOP;
+
+	indir = rxfh->indir;
+	key = rxfh->key;
 
 	err = fm10k_get_reta(netdev, indir);
 	if (err || !key)
@@ -1111,26 +1117,23 @@ static int fm10k_get_rssh(struct net_device *netdev, u32 *indir, u8 *key)
 
 	return 0;
 }
+#endif /* HAVE_RXFH_HASHFUNC */
 
 #ifdef HAVE_RXFH_HASHFUNC
-static int fm10k_set_rssh(struct net_device *netdev, const u32 *indir,
-			  const u8 *key, const u8 hfunc)
-#elif defined(HAVE_RXFH_NONCONST)
-static int fm10k_set_rssh(struct net_device *netdev, u32 *indir, u8 *key)
-#else
-static int fm10k_set_rssh(struct net_device *netdev, const u32 *indir,
-			  const u8 *key)
-#endif
+static int fm10k_set_rssh(struct net_device *netdev,
+			 struct ethtool_rxfh_param *rxfh,
+			 struct netlink_ext_ack *extack)
 {
 	struct fm10k_intfc *interface = netdev_priv(netdev);
 	struct fm10k_hw *hw = &interface->hw;
+	const u32 *indir = rxfh->indir;
+	const u8 *key = rxfh->key;
 	int i, err;
 
-#ifdef HAVE_RXFH_HASHFUNC
 	/* We do not allow change in unsupported parameters */
-	if (hfunc != ETH_RSS_HASH_NO_CHANGE && hfunc != ETH_RSS_HASH_TOP)
+	if (rxfh->hfunc != ETH_RSS_HASH_NO_CHANGE &&
+	    rxfh->hfunc != ETH_RSS_HASH_TOP)
 		return -EOPNOTSUPP;
-#endif
 
 	err = fm10k_set_reta(netdev, indir);
 	if (err || !key)
@@ -1148,6 +1151,7 @@ static int fm10k_set_rssh(struct net_device *netdev, const u32 *indir,
 
 	return 0;
 }
+#endif /* HAVE_RXFH_HASHFUNC */
 
 #endif /* ETHTOOL_GRSSH */
 #ifndef HAVE_ETHTOOL_GRXFHINDIR_SIZE
@@ -1271,6 +1275,8 @@ static int fm10k_set_flags(struct net_device *netdev, u32 data)
 #endif /* HAVE_NDO_SET_FEATURES */
 
 static const struct ethtool_ops fm10k_ethtool_ops = {
+	.supported_coalesce_params = ETHTOOL_COALESCE_USECS |
+				     ETHTOOL_COALESCE_USE_ADAPTIVE,
 	.get_strings		= fm10k_get_strings,
 	.get_sset_count		= fm10k_get_sset_count,
 	.get_ethtool_stats      = fm10k_get_ethtool_stats,

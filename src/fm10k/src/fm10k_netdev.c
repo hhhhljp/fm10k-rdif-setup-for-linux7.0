@@ -814,7 +814,7 @@ static int fm10k_change_mtu(struct net_device *dev, int new_mtu)
  * fm10k_tx_timeout - Respond to a Tx Hang
  * @netdev: network interface device structure
  **/
-static void fm10k_tx_timeout(struct net_device *netdev)
+static void fm10k_tx_timeout(struct net_device *netdev, unsigned int txqueue)
 {
 	struct fm10k_intfc *interface = netdev_priv(netdev);
 	bool real_tx_hang = false;
@@ -967,7 +967,7 @@ void fm10k_clear_macvlan_queue(struct fm10k_intfc *interface,
 			/* Don't free requests for other interfaces */
 			if (r->mac.glort != glort)
 				break;
-			/* fall through */
+			fallthrough;
 		case FM10K_VLAN_REQUEST:
 			if (vlans) {
 				list_del(&r->list);
@@ -1274,7 +1274,7 @@ static int fm10k_set_mac(struct net_device *dev, void *p)
 	}
 
 	if (!err) {
-		ether_addr_copy(dev->dev_addr, addr->sa_data);
+		dev_addr_set(dev, addr->sa_data);
 		ether_addr_copy(hw->mac.addr, addr->sa_data);
 #ifdef NET_ADDR_RANDOM
 		dev->addr_assign_type &= ~NET_ADDR_RANDOM;
@@ -1541,10 +1541,10 @@ fm10k_get_stats64(struct net_device *netdev, struct rtnl_link_stats64 *stats)
 			continue;
 
 		do {
-			start = u64_stats_fetch_begin_irq(&ring->syncp);
+			start = u64_stats_fetch_begin(&ring->syncp);
 			packets = ring->stats.packets;
 			bytes   = ring->stats.bytes;
-		} while (u64_stats_fetch_retry_irq(&ring->syncp, start));
+		} while (u64_stats_fetch_retry(&ring->syncp, start));
 
 		stats->rx_packets += packets;
 		stats->rx_bytes   += bytes;
@@ -1557,10 +1557,10 @@ fm10k_get_stats64(struct net_device *netdev, struct rtnl_link_stats64 *stats)
 			continue;
 
 		do {
-			start = u64_stats_fetch_begin_irq(&ring->syncp);
+			start = u64_stats_fetch_begin(&ring->syncp);
 			packets = ring->stats.packets;
 			bytes   = ring->stats.bytes;
-		} while (u64_stats_fetch_retry_irq(&ring->syncp, start));
+		} while (u64_stats_fetch_retry(&ring->syncp, start));
 
 		stats->tx_packets += packets;
 		stats->tx_bytes   += bytes;
@@ -1961,10 +1961,6 @@ static const struct net_device_ops fm10k_netdev_ops = {
 #ifdef HAVE_RHEL7_NETDEV_OPS_EXT_NDO_SET_VF_VLAN
 	.ndo_set_vf_vlan	= fm10k_ndo_set_vf_vlan,
 #endif /* HAVE_RHEL7_NETDEV_OPS_EXT_NDO_SET_VF_VLAN */
-#ifdef HAVE_UDP_ENC_RX_OFFLOAD
-	.ndo_udp_tunnel_add	= fm10k_udp_tunnel_add,
-	.ndo_udp_tunnel_del	= fm10k_udp_tunnel_del,
-#endif
 #ifdef NETIF_F_HW_L2FW_DOFFLOAD
 	.ndo_dfwd_add_station	= fm10k_dfwd_add_station,
 	.ndo_dfwd_del_station	= fm10k_dfwd_del_station,
